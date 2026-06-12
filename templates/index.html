@@ -105,6 +105,21 @@
             cursor: not-allowed;
         }
         
+        button.secondary {
+            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+            margin-top: 10px;
+        }
+        
+        .flex-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .flex-buttons button {
+            flex: 1;
+        }
+        
         .status {
             margin-top: 20px;
             padding: 15px;
@@ -130,6 +145,13 @@
             background: #d1ecf1;
             color: #0c5460;
             border: 1px solid #bee5eb;
+            display: block;
+        }
+        
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
             display: block;
         }
         
@@ -170,6 +192,7 @@
             font-weight: bold;
             color: #333;
             word-break: break-all;
+            flex: 1;
         }
         
         .file-size {
@@ -206,12 +229,30 @@
             border: none;
             border-top: 1px solid #eee;
         }
+        
+        .auth-status {
+            margin-top: 15px;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🎬 YouTube Video Downloader</h1>
         
+        <!-- Authentication Card -->
+        <div class="card">
+            <h3>🔐 Authentication (Required for Downloads)</h3>
+            <p style="margin-bottom: 15px; color: #666; font-size: 14px;">YouTube requires authentication to download videos. Please log in to your YouTube account first.</p>
+            
+            <div class="flex-buttons">
+                <button onclick="openYouTube()" class="secondary">🌐 Open YouTube (Log in)</button>
+                <button onclick="getCookies()" class="secondary">🍪 Get Cookies from Browser</button>
+            </div>
+            <div id="authStatus" class="auth-status"></div>
+        </div>
+        
+        <!-- Download Card -->
         <div class="card">
             <div id="envInfo" class="folder-info">Loading environment...</div>
             
@@ -228,6 +269,7 @@
             </div>
         </div>
         
+        <!-- Downloaded Files Card -->
         <div class="card">
             <h3>📁 Downloaded Files</h3>
             <button class="refresh-btn" onclick="loadFiles()">🔄 Refresh List</button>
@@ -249,10 +291,52 @@
                     const envDiv = document.getElementById('envInfo');
                     const envType = data.is_render ? '🖥️ RENDER' : '💻 LOCAL';
                     const folder = data.download_folder;
-                    envDiv.innerHTML = `${envType} | 📁 ${folder} | 💾 ${data.disk_free_gb ? data.disk_free_gb.toFixed(2) + ' GB free' : 'N/A'}`;
+                    envDiv.innerHTML = `${envType} | 📁 ${folder}`;
                 }
             } catch (error) {
                 console.error('Error loading environment:', error);
+            }
+        }
+        
+        async function openYouTube() {
+            const authDiv = document.getElementById('authStatus');
+            authDiv.innerHTML = '<div class="status info">🔄 Opening YouTube in your browser...</div>';
+            
+            try {
+                const response = await fetch('/api/open-youtube');
+                const data = await response.json();
+                
+                if (data.success) {
+                    authDiv.innerHTML = '<div class="status success">✅ YouTube opened in your browser. Please log in, then click "Get Cookies".</div>';
+                } else {
+                    authDiv.innerHTML = `<div class="status warning">⚠️ ${data.message}<br>${data.instructions || ''}</div>`;
+                }
+            } catch (error) {
+                authDiv.innerHTML = `<div class="status error">❌ Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function getCookies() {
+            const authDiv = document.getElementById('authStatus');
+            authDiv.innerHTML = '<div class="status info">🔄 Getting cookies from browser...</div>';
+            
+            try {
+                const response = await fetch('/api/get-cookies', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ method: 'browser' })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    authDiv.innerHTML = '<div class="status success">✅ Cookies obtained successfully! You can now download videos.</div>';
+                    // Refresh environment to show cookies available
+                    loadEnvironment();
+                } else {
+                    authDiv.innerHTML = `<div class="status error">❌ ${data.message}</div>`;
+                }
+            } catch (error) {
+                authDiv.innerHTML = `<div class="status error">❌ Error: ${error.message}</div>`;
             }
         }
         
@@ -302,6 +386,13 @@
                     urlInput.value = '';
                     loadFiles();
                     loadEnvironment();
+                } else if (data.need_auth) {
+                    showStatus('❌ ' + data.error, 'warning');
+                    // Highlight the auth card
+                    document.querySelector('.card:first-child').style.border = '2px solid #ffc107';
+                    setTimeout(() => {
+                        document.querySelector('.card:first-child').style.border = 'none';
+                    }, 3000);
                 } else {
                     showStatus('❌ Error: ' + data.error, 'error');
                 }
@@ -330,7 +421,7 @@
                     data.files.forEach(file => {
                         html += `
                             <div class="file-item">
-                                <div class="file-name">${file.name}</div>
+                                <div class="file-name">${escapeHtml(file.name)}</div>
                                 <div class="file-size">${file.size_mb} MB</div>
                             </div>
                         `;
@@ -357,6 +448,12 @@
                     }, 5000);
                 }
             }, 100);
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
         
         // Initialize
