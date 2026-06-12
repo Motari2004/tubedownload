@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: youtube-downloader
+    runtime: image
+    repo: https://github.com/YOUR_USERNAME/youtube-downloader
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: PORT
+        value: 10000
+    disk:
+      name: downloads
+      mountPath: /opt/render/project/src/downloads
+      sizeGB: 10

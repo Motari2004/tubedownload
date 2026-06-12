@@ -1,4 +1,4 @@
-# app.py - Hybrid version (Local + Render)
+# app.py - Docker version
 import os
 import subprocess
 import sys
@@ -9,34 +9,36 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-# Detect environment
-IS_RENDER = os.environ.get('RENDER', False) or os.path.exists('/etc/secrets')
+# Environment detection
+IS_RENDER = os.environ.get('RENDER', False) or os.path.exists('/.dockerenv')
 
-# Set download folder based on environment
-if IS_RENDER:
-    # Render - use persistent disk
+# Download folder
+if IS_RENDER or os.path.exists('/.dockerenv'):
     DOWNLOAD_FOLDER = Path('/opt/render/project/src/downloads')
-    print("📍 Running on Render")
 else:
-    # Local - use local folder
     DOWNLOAD_FOLDER = Path(__file__).parent / 'downloads'
-    print("📍 Running Locally")
 
-# Create download folder
 DOWNLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 
+print(f"📍 Environment: {'Docker/Render' if IS_RENDER else 'Local'}")
 print(f"📁 Download folder: {DOWNLOAD_FOLDER}")
 
 def check_ytdlp():
     """Check if yt-dlp is installed"""
     try:
+        subprocess.run([sys.executable, '-m', 'pip', 'install', '--upgrade', 'yt-dlp'], 
+                      capture_output=True)
         result = subprocess.run(['yt-dlp', '--version'], capture_output=True, text=True)
-        print(f"✅ yt-dlp is installed")
+        print(f"✅ yt-dlp: {result.stdout.strip()}")
+        
+        # Check Deno
+        deno = subprocess.run(['deno', '--version'], capture_output=True, text=True)
+        if deno.returncode == 0:
+            print(f"✅ Deno: {deno.stdout.strip().split()[1]}")
         return True
-    except:
-        print("📦 Installing yt-dlp...")
-        subprocess.run([sys.executable, '-m', 'pip', 'install', 'yt-dlp'])
-        return True
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return False
 
 @app.route('/')
 def index():
@@ -53,30 +55,23 @@ def download():
             return jsonify({'success': False, 'error': 'No URL provided'})
         
         print(f"📥 Downloading: {video_url}")
-        print(f"📁 Saving to: {DOWNLOAD_FOLDER}")
         
-        # Ensure yt-dlp is installed
         check_ytdlp()
         
-        # Get cookies if on Render (optional)
-        cookies_arg = []
-        if IS_RENDER:
-            cookies_path = '/etc/secrets/cookies.txt'
-            if os.path.exists(cookies_path):
-                cookies_arg = ['--cookies', cookies_path]
-                print("✅ Using cookies for authentication")
-        
-        # Try format 18 (360p MP4 - most reliable)
+        # Use Deno for JavaScript challenges
         cmd = [
             'yt-dlp',
+            '--js-runtimes', 'deno',
             '--remote-components', 'ejs:npm',
-            '-f', '18',
+            '-f', 'best[ext=mp4]/best',
             '-o', f'{DOWNLOAD_FOLDER}/%(title)s.%(ext)s',
             '--no-playlist',
             '--restrict-filenames',
-        ] + cookies_arg + [video_url]
+            '--no-warnings',
+            video_url
+        ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         
         # Check for downloaded files
         downloaded_files = list(DOWNLOAD_FOLDER.glob('*.mp4'))
@@ -89,21 +84,19 @@ def download():
                 'success': True,
                 'message': f'✅ Downloaded: {latest_file.name} ({file_size} MB)',
                 'filename': latest_file.name,
-                'size_mb': file_size,
-                'path': str(latest_file)
+                'size_mb': file_size
             })
         else:
-            # Try best format as fallback
-            print("Format 18 failed, trying best format...")
+            # Fallback without Deno
             cmd2 = [
                 'yt-dlp',
-                '-f', 'best[ext=mp4]/best',
+                '-f', '18',
                 '-o', f'{DOWNLOAD_FOLDER}/%(title)s.%(ext)s',
                 '--no-playlist',
                 '--restrict-filenames',
-            ] + cookies_arg + [video_url]
-            
-            result2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=300)
+                video_url
+            ]
+            result2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=600)
             downloaded_files2 = list(DOWNLOAD_FOLDER.glob('*.mp4'))
             
             if result2.returncode == 0 and downloaded_files2:
@@ -114,8 +107,7 @@ def download():
                     'success': True,
                     'message': f'✅ Downloaded: {latest_file.name} ({file_size} MB)',
                     'filename': latest_file.name,
-                    'size_mb': file_size,
-                    'path': str(latest_file)
+                    'size_mb': file_size
                 })
             
             return jsonify({
@@ -124,7 +116,7 @@ def download():
             })
             
     except subprocess.TimeoutExpired:
-        return jsonify({'success': False, 'error': 'Download timed out after 5 minutes'})
+        return jsonify({'success': False, 'error': 'Download timed out after 10 minutes'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -136,36 +128,27 @@ def list_files():
         files.append({
             'name': f.name,
             'size_mb': round(f.stat().st_size / (1024 * 1024), 2),
-            'path': str(f),
-            'modified': f.stat().st_mtime
+            'path': str(f)
         })
-    # Sort by newest first
-    files.sort(key=lambda x: x['modified'], reverse=True)
-    return jsonify({'success': True, 'files': files, 'download_folder': str(DOWNLOAD_FOLDER)})
+    files.sort(key=lambda x: x['name'], reverse=True)
+    return jsonify({'success': True, 'files': files})
 
 @app.route('/api/environment', methods=['GET'])
 def environment():
     """Get environment info"""
     return jsonify({
         'success': True,
-        'is_render': IS_RENDER,
+        'is_docker': True,
         'download_folder': str(DOWNLOAD_FOLDER),
-        'disk_free_gb': DOWNLOAD_FOLDER.free / (1024**3) if hasattr(DOWNLOAD_FOLDER, 'free') else None
+        'deno_installed': subprocess.run(['deno', '--version'], capture_output=True).returncode == 0
     })
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print("=" * 50)
-    print("🚀 YouTube Downloader Started")
+    print("🚀 YouTube Downloader (Docker)")
     print("=" * 50)
-    print(f"📍 Environment: {'Render' if IS_RENDER else 'Local'}")
     print(f"📁 Download folder: {DOWNLOAD_FOLDER}")
-    try:
-        free_gb = DOWNLOAD_FOLDER.free / (1024**3) if hasattr(DOWNLOAD_FOLDER, 'free') else None
-        if free_gb:
-            print(f"💾 Free space: {free_gb:.2f} GB")
-    except:
-        pass
     print(f"🌐 Server: http://0.0.0.0:{port}")
     print("=" * 50)
     app.run(host='0.0.0.0', port=port, debug=False)
