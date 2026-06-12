@@ -161,7 +161,7 @@ def download():
             '-o', f'{DOWNLOAD_FOLDER}/%(title)s.%(ext)s',
             '--no-playlist',
             '--restrict-filenames',
-            '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            '--extractor-args', 'youtube:player_client=tv_embedded',
         ] + cookies_arg + [video_url]
         
         print("Running download...")
@@ -185,10 +185,11 @@ def download():
         print("Trying format 22...")
         cmd2 = [
             'yt-dlp',
-            '-f', '22',
+            '-f', '18/best',
             '-o', f'{DOWNLOAD_FOLDER}/%(title)s.%(ext)s',
             '--no-playlist',
             '--restrict-filenames',
+            '--extractor-args', 'youtube:player_client=web_embedded',
         ] + cookies_arg + [video_url]
         
         result2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=600)
