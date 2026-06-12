@@ -126,6 +126,14 @@ def get_cookies():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+
+
+
+
+
+
+
+
 @app.route('/api/download', methods=['POST'])
 def download():
     """Download video from URL"""
@@ -140,28 +148,23 @@ def download():
         
         check_ytdlp()
         
-        # First try to get cookies from browser
+        # Get cookies
         cookies_arg = []
-        if not IS_RENDER:
-            # On local, try browser cookies
-            cookies_arg = get_cookies_from_browser()
-        
-        if not cookies_arg:
-            # Fallback to existing cookie files
-            cookies_arg = get_existing_cookies()
+        cookies_path = '/etc/secrets/cookies.txt'
+        if os.path.exists(cookies_path):
+            cookies_arg = ['--cookies', cookies_path]
+            print("✅ Using cookies")
         
         deno_path = check_deno()
         
-        # Try format 18 first
-        print("Trying format 18 (360p)...")
+        # Remove android client - use web client instead
         cmd = [
             'yt-dlp',
-            '-f', '18',
+            '-f', 'best[ext=mp4]/best',
             '-o', f'{DOWNLOAD_FOLDER}/%(title)s.%(ext)s',
             '--no-playlist',
             '--restrict-filenames',
             '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            '--extractor-args', 'youtube:player_client=android',
         ] + cookies_arg + [video_url]
         
         if deno_path:
@@ -170,6 +173,7 @@ def download():
             cmd.insert(3, '--remote-components')
             cmd.insert(4, 'ejs:npm')
         
+        print("Running download...")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         
         downloaded_files = list(DOWNLOAD_FOLDER.glob('*.mp4'))
@@ -177,6 +181,7 @@ def download():
         if result.returncode == 0 and downloaded_files:
             latest_file = max(downloaded_files, key=lambda f: f.stat().st_mtime)
             file_size = round(latest_file.stat().st_size / (1024 * 1024), 2)
+            print(f"✅ Downloaded: {latest_file.name} ({file_size} MB)")
             
             return jsonify({
                 'success': True,
@@ -185,19 +190,16 @@ def download():
                 'size_mb': file_size
             })
         
-        # If bot error, suggest cookie refresh
-        if 'bot' in result.stderr.lower() or 'sign in' in result.stderr.lower():
-            return jsonify({
-                'success': False,
-                'error': 'YouTube requires authentication. Please click "Open YouTube" button, log in, then click "Get Cookies".',
-                'need_auth': True
-            })
-        
         error_msg = result.stderr[:500] if result.stderr else 'Download failed'
+        print(f"❌ Error: {error_msg}")
+        
         return jsonify({'success': False, 'error': error_msg})
             
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+
+
 
 def get_existing_cookies():
     """Check for existing cookie files"""
