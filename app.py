@@ -69,6 +69,7 @@ def download():
         # Try format 18 (360p MP4 - most reliable)
         cmd = [
             'yt-dlp',
+            '--remote-components', 'ejs:npm',
             '-f', '18',
             '-o', f'{DOWNLOAD_FOLDER}/%(title)s.%(ext)s',
             '--no-playlist',
