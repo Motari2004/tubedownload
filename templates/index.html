@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Downloader</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .env-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        
+        .env-local {
+            background: #28a745;
+            color: white;
+        }
+        
+        .env-render {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            width: 100%;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+        
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 15px 0;
+            display: none;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s;
+        }
+        
+        .file-list {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .file-item {
+            background: #f8f9fa;
+            padding: 10px;
+            margin: 8px 0;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .file-name {
+            font-weight: bold;
+            color: #333;
+            word-break: break-all;
+        }
+        
+        .file-size {
+            color: #666;
+            font-size: 12px;
+            white-space: nowrap;
+            margin-left: 10px;
+        }
+        
+        .refresh-btn {
+            background: #6c757d;
+            margin-top: 15px;
+            padding: 8px;
+            font-size: 14px;
+        }
+        
+        .folder-info {
+            background: #e8f0fe;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 12px;
+            color: #667eea;
+            word-break: break-all;
+        }
+        
+        h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        hr {
+            margin: 20px 0;
+            border: none;
+            border-top: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 YouTube Video Downloader</h1>
+        
+        <div class="card">
+            <div id="envInfo" class="folder-info">Loading environment...</div>
+            
+            <div class="input-group">
+                <label>🔗 YouTube URL</label>
+                <input type="text" id="videoUrl" placeholder="https://youtube.com/watch?v=..." value="https://youtube.com/watch?v=ukzFI9rgwfU">
+            </div>
+            
+            <button id="downloadBtn" onclick="startDownload()">📥 Download Video</button>
+            
+            <div id="status" class="status"></div>
+            <div id="progressBar" class="progress-bar">
+                <div id="progressFill" class="progress-fill"></div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3>📁 Downloaded Files</h3>
+            <button class="refresh-btn" onclick="loadFiles()">🔄 Refresh List</button>
+            <div id="fileList" class="file-list">
+                <p style="color: #999;">No files downloaded yet</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentEnv = {};
+        
+        async function loadEnvironment() {
+            try {
+                const response = await fetch('/api/environment');
+                const data = await response.json();
+                if (data.success) {
+                    currentEnv = data;
+                    const envDiv = document.getElementById('envInfo');
+                    const envType = data.is_render ? '🖥️ RENDER' : '💻 LOCAL';
+                    const folder = data.download_folder;
+                    envDiv.innerHTML = `${envType} | 📁 ${folder} | 💾 ${data.disk_free_gb ? data.disk_free_gb.toFixed(2) + ' GB free' : 'N/A'}`;
+                }
+            } catch (error) {
+                console.error('Error loading environment:', error);
+            }
+        }
+        
+        async function startDownload() {
+            const urlInput = document.getElementById('videoUrl');
+            const videoUrl = urlInput.value.trim();
+            
+            if (!videoUrl) {
+                showStatus('Please enter a YouTube URL', 'error');
+                return;
+            }
+            
+            const downloadBtn = document.getElementById('downloadBtn');
+            const statusDiv = document.getElementById('status');
+            const progressBar = document.getElementById('progressBar');
+            const progressFill = document.getElementById('progressFill');
+            
+            downloadBtn.disabled = true;
+            downloadBtn.textContent = '📥 Downloading...';
+            progressBar.style.display = 'block';
+            progressFill.style.width = '0%';
+            showStatus('Starting download...', 'info');
+            
+            // Animate progress
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 5;
+                if (progress <= 90) {
+                    progressFill.style.width = progress + '%';
+                }
+            }, 500);
+            
+            try {
+                const response = await fetch('/api/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: videoUrl })
+                });
+                
+                clearInterval(interval);
+                progressFill.style.width = '100%';
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatus(`${data.message}<br>📁 Saved to: ${data.path || currentEnv.download_folder}`, 'success');
+                    urlInput.value = '';
+                    loadFiles();
+                    loadEnvironment();
+                } else {
+                    showStatus('❌ Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                clearInterval(interval);
+                showStatus('❌ Connection error: ' + error.message, 'error');
+            } finally {
+                downloadBtn.disabled = false;
+                downloadBtn.textContent = '📥 Download Video';
+                setTimeout(() => {
+                    progressBar.style.display = 'none';
+                    progressFill.style.width = '0%';
+                }, 2000);
+            }
+        }
+        
+        async function loadFiles() {
+            try {
+                const response = await fetch('/api/list');
+                const data = await response.json();
+                
+                const fileList = document.getElementById('fileList');
+                
+                if (data.success && data.files.length > 0) {
+                    let html = '';
+                    data.files.forEach(file => {
+                        html += `
+                            <div class="file-item">
+                                <div class="file-name">${file.name}</div>
+                                <div class="file-size">${file.size_mb} MB</div>
+                            </div>
+                        `;
+                    });
+                    fileList.innerHTML = html;
+                } else {
+                    fileList.innerHTML = '<p style="color: #999;">No files downloaded yet</p>';
+                }
+            } catch (error) {
+                console.error('Error loading files:', error);
+            }
+        }
+        
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${type}`;
+            statusDiv.innerHTML = message;
+            statusDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                if (type !== 'error') {
+                    setTimeout(() => {
+                        statusDiv.style.display = 'none';
+                    }, 5000);
+                }
+            }, 100);
+        }
+        
+        // Initialize
+        loadEnvironment();
+        loadFiles();
+        
+        // Allow Enter key to submit
+        document.getElementById('videoUrl').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                startDownload();
+            }
+        });
+    </script>
+</body>
+</html>
