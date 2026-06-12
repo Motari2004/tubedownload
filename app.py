@@ -2,6 +2,7 @@
 import os
 import subprocess
 import sys
+import json
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
@@ -25,11 +26,11 @@ print(f"📁 Download folder: {DOWNLOAD_FOLDER}")
 
 def check_deno():
     """Check if Deno is available - handles PATH issues gracefully"""
-    # Possible Deno locations
     deno_paths = [
-        'deno',  # Try from PATH
-        r'G:\denoruntime\deno.exe',  # Your specific location
-        r'C:\Users\PC\.deno\bin\deno.exe',  # Default Deno location
+        'deno',
+        r'G:\denoruntime\deno.exe',
+        r'C:\Users\PC\.deno\bin\deno.exe',
+        r'/root/.deno/bin/deno',  # Render path
     ]
     
     for deno_path in deno_paths:
@@ -57,6 +58,71 @@ def check_ytdlp():
         subprocess.run([sys.executable, '-m', 'pip', 'install', 'yt-dlp'])
         return True
 
+def get_cookies_arg():
+    """Get cookies from various sources (JSON or Netscape format)"""
+    
+    # Check for Netscape format cookies.txt
+    netscape_paths = [
+        'cookies.txt',
+        '/etc/secrets/cookies.txt',
+        '/tmp/cookies.txt',
+    ]
+    
+    for path in netscape_paths:
+        if os.path.exists(path):
+            print(f"✅ Using Netscape cookies from: {path}")
+            return ['--cookies', path]
+    
+    # Check for JSON cookie files
+    json_paths = [
+        'www.youtube.com_cookies.json',
+        '/etc/secrets/www.youtube.com_cookies.json',
+    ]
+    
+    for json_path in json_paths:
+        if os.path.exists(json_path):
+            print(f"✅ Found JSON cookies: {json_path}")
+            temp_cookie_file = '/tmp/cookies.txt'
+            
+            try:
+                with open(json_path, 'r') as f:
+                    cookies = json.load(f)
+                
+                with open(temp_cookie_file, 'w') as f:
+                    f.write("# Netscape HTTP Cookie File\n")
+                    for cookie in cookies:
+                        if cookie.get('domain'):
+                            domain = cookie.get('domain', '')
+                            flag = 'TRUE' if domain.startswith('.') else 'FALSE'
+                            path = cookie.get('path', '/')
+                            secure = 'TRUE' if cookie.get('secure', False) else 'FALSE'
+                            expiry = int(cookie.get('expirationDate', 0)) if cookie.get('expirationDate') else 0
+                            name = cookie.get('name', '')
+                            value = cookie.get('value', '')
+                            f.write(f"{domain}\t{flag}\t{path}\t{secure}\t{expiry}\t{name}\t{value}\n")
+                
+                print(f"✅ Converted JSON cookies to {temp_cookie_file}")
+                return ['--cookies', temp_cookie_file]
+            except Exception as e:
+                print(f"⚠️ Failed to convert JSON cookies: {e}")
+    
+    # Check for Base64 encoded cookies in environment variable
+    cookies_base64 = os.environ.get('COOKIES_BASE64', '')
+    if cookies_base64:
+        try:
+            import base64
+            temp_cookie_file = '/tmp/cookies.txt'
+            cookies_content = base64.b64decode(cookies_base64).decode('utf-8')
+            with open(temp_cookie_file, 'w') as f:
+                f.write(cookies_content)
+            print("✅ Loaded cookies from environment variable")
+            return ['--cookies', temp_cookie_file]
+        except Exception as e:
+            print(f"⚠️ Failed to decode base64 cookies: {e}")
+    
+    print("⚠️ No cookies found. Downloads may be rate-limited.")
+    return []
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -76,22 +142,29 @@ def download():
         # Ensure yt-dlp is installed
         check_ytdlp()
         
-        # Build command
+        # Get cookies
+        cookies_arg = get_cookies_arg()
+        
+        # Build command with all optimizations
         cmd = [
             'yt-dlp',
             '-f', 'best[ext=mp4]/best',
             '-o', f'{DOWNLOAD_FOLDER}/%(title)s.%(ext)s',
             '--no-playlist',
             '--restrict-filenames',
-            '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            '--extractor-args', 'youtube:player_client=android',
-            video_url
-        ]
+            '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            '--extractor-args', 'youtube:player_client=android,web',
+            '--extractor-args', 'youtube:skip=webpage',
+            '--sleep-requests', '3',
+            '--sleep-interval', '5',
+            '--max-sleep-interval', '10',
+            '--retries', '10',
+            '--fragment-retries', '10',
+        ] + cookies_arg + [video_url]
         
         # Add Deno if available (for JavaScript challenges)
         deno_path = check_deno()
         if deno_path:
-            # Insert Deno args after yt-dlp
             cmd.insert(1, '--js-runtimes')
             cmd.insert(2, deno_path)
             cmd.insert(3, '--remote-components')
@@ -100,6 +173,9 @@ def download():
         
         print("Running download...")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        
+        if result.stderr:
+            print(f"STDERR: {result.stderr[:200]}")
         
         # Check for downloaded files
         downloaded_files = list(DOWNLOAD_FOLDER.glob('*.mp4'))
@@ -113,7 +189,8 @@ def download():
                 'success': True,
                 'message': f'✅ Downloaded: {latest_file.name} ({file_size} MB)',
                 'filename': latest_file.name,
-                'size_mb': file_size
+                'size_mb': file_size,
+                'path': str(latest_file)
             })
         
         # If best format fails, try format 18
@@ -124,8 +201,7 @@ def download():
             '-o', f'{DOWNLOAD_FOLDER}/%(title)s.%(ext)s',
             '--no-playlist',
             '--restrict-filenames',
-            video_url
-        ]
+        ] + cookies_arg + [video_url]
         
         if deno_path:
             cmd2.insert(1, '--js-runtimes')
@@ -145,7 +221,8 @@ def download():
                 'success': True,
                 'message': f'✅ Downloaded: {latest_file.name} ({file_size} MB)',
                 'filename': latest_file.name,
-                'size_mb': file_size
+                'size_mb': file_size,
+                'path': str(latest_file)
             })
         
         error_msg = result2.stderr[:500] if result2.stderr else 'Download failed'
@@ -169,20 +246,23 @@ def list_files():
         files.append({
             'name': f.name,
             'size_mb': round(f.stat().st_size / (1024 * 1024), 2),
-            'path': str(f)
+            'path': str(f),
+            'modified': f.stat().st_mtime
         })
-    files.sort(key=lambda x: x['name'], reverse=True)
-    return jsonify({'success': True, 'files': files})
+    files.sort(key=lambda x: x['modified'], reverse=True)
+    return jsonify({'success': True, 'files': files, 'download_folder': str(DOWNLOAD_FOLDER)})
 
 @app.route('/api/environment', methods=['GET'])
 def environment():
     """Get environment info without causing errors"""
     deno_available = check_deno() is not None
+    cookies_available = len(get_cookies_arg()) > 0
     return jsonify({
         'success': True,
         'is_render': IS_RENDER,
         'download_folder': str(DOWNLOAD_FOLDER),
-        'deno_available': deno_available
+        'deno_available': deno_available,
+        'cookies_available': cookies_available
     })
 
 if __name__ == '__main__':
@@ -190,6 +270,7 @@ if __name__ == '__main__':
     print("=" * 50)
     print("🚀 YouTube Downloader Started")
     print("=" * 50)
+    print(f"📍 Environment: {'Render' if IS_RENDER else 'Local'}")
     print(f"📁 Download folder: {DOWNLOAD_FOLDER}")
     print(f"🌐 Server: http://localhost:{port}")
     print("=" * 50)
